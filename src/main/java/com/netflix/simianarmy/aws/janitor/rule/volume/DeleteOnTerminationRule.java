@@ -22,7 +22,6 @@ import com.netflix.simianarmy.Resource;
 import com.netflix.simianarmy.aws.AWSResource;
 import com.netflix.simianarmy.aws.janitor.crawler.edda.EddaEBSVolumeJanitorCrawler;
 import com.netflix.simianarmy.janitor.JanitorMonkey;
-import com.netflix.simianarmy.janitor.Rule;
 import org.apache.commons.lang.Validate;
 import org.joda.time.format.DateTimeFormat;
 import org.joda.time.format.DateTimeFormatter;
@@ -39,7 +38,7 @@ import java.util.Date;
  * NOTE: since the information came from the history, the rule will work only if Edda is enabled
  * for Janitor Monkey.
  */
-public class DeleteOnTerminationRule implements Rule {
+public class DeleteOnTerminationRule extends VolumeRule {
 
     /** The Constant LOGGER. */
     private static final Logger LOGGER = LoggerFactory.getLogger(DeleteOnTerminationRule.class);
@@ -47,9 +46,6 @@ public class DeleteOnTerminationRule implements Rule {
     private final MonkeyCalendar calendar;
 
     private final int retentionDays;
-
-    /** The date format used to print or parse the user specified termination date. **/
-    private static final DateTimeFormatter TERMINATION_DATE_FORMATTER = DateTimeFormat.forPattern("yyyy-MM-dd");
 
     /**
      * The termination reason for the DeleteOnTerminationRule.
@@ -73,35 +69,8 @@ public class DeleteOnTerminationRule implements Rule {
     }
 
     @Override
-    public boolean isValid(Resource resource) {
-        Validate.notNull(resource);
-        if (!resource.getResourceType().name().equals("EBS_VOLUME")) {
-            return true;
-        }
-
-        // The state of the volume being "available" means that it is not attached to any instance.
-        if (!"available".equals(((AWSResource) resource).getAWSResourceState())) {
-            return true;
-        }
-        String janitorTag = resource.getTag(JanitorMonkey.JANITOR_TAG);
-        if (janitorTag != null) {
-            if ("donotmark".equals(janitorTag)) {
-                LOGGER.info(String.format("The volume %s is tagged as not handled by Janitor",
-                        resource.getId()));
-                return true;
-            }
-            try {
-                // Owners can tag the volume with a termination date in the "janitor" tag.
-                Date userSpecifiedDate = new Date(
-                        TERMINATION_DATE_FORMATTER.parseDateTime(janitorTag).getMillis());
-                resource.setExpectedTerminationTime(userSpecifiedDate);
-                resource.setTerminationReason(String.format("User specified termination date %s", janitorTag));
-                return false;
-            } catch (Exception e) {
-                LOGGER.error(String.format("The janitor tag is not a user specified date: %s", janitorTag));
-            }
-        }
-
+    public boolean isValidResource(Resource resource) {
+        
         if ("true".equals(resource.getAdditionalField(EddaEBSVolumeJanitorCrawler.DELETE_ON_TERMINATION))) {
             if (resource.getExpectedTerminationTime() == null) {
                 Date terminationTime = calendar.getBusinessDay(calendar.now().getTime(), retentionDays);
